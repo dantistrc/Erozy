@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": "../.."
+		},
+		{
+			"name": "Erozy",
+			"path": ".."
+		},
+		{
+			"name": "ButtonVac",
+			"path": "../../ButtonVac"
+		}
+	],
+	"settings": {}
+}

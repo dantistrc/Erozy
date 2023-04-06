@@ -1,0 +1,213 @@
+// 
+
+#include <GyverStepper.h>
+// GStepper<STEPPER4WIRE> stepper(2048, 5, 3, 4, 2);
+GStepper<STEPPER2WIRE> stepper(20000, 6, 5);
+#include <EncButton.h>
+EncButton<EB_TICK, 2, 3, 4> enc; // энкодер с кнопкой <A, B, KEY>
+#include "GyverPID.h"
+GyverPID regulator(0.1, 0.05, 0.01, 10); // коэф. П, коэф. И, коэф. Д, период дискретизации dt (мс)
+long hi_gh = 0;
+long temp; // читаем с датчика температуру
+int analogPin = 3;
+boolean start = false;
+long zeromin = 10;
+long regout = 0;
+
+void myTurn()
+{
+  
+  // hi_gh = 25*enc.counter;
+  // Serial.print("TURN_HANDLER: ");
+  // Serial.println(enc.counter);
+  // Serial.println(temp);
+  // Serial.println(hi_gh);
+}
+
+void isr()
+{
+  enc.tickISR(); // тикер в прерывании
+  if (enc.turn())
+  {
+    Serial.println("turn");
+
+    // можно опросить ещё:
+    // Serial.println(enc.counter);  // вывести счётчик
+    // Serial.println(enc.fast());   // проверить быстрый поворот
+    Serial.println(enc.dir()); // направление поворота
+  }
+
+  // "нажатый поворот"
+  if (enc.turnH())
+  {
+    Serial.println("hold + turn");
+
+    // можно опросить ещё:
+    // Serial.println(enc.counter);  // вывести счётчик
+    // Serial.println(enc.fast());   // проверить быстрый поворот
+    //Serial.println(enc.dir()); // направление поворота
+  }
+
+  if (enc.left()){
+    //Serial.println("left"); // поворот налево
+    Serial.println(hi_gh);
+      hi_gh += 500;}
+  if (enc.right()){
+    hi_gh -= 500;
+    //Serial.println("right"); // поворот направо
+    Serial.println(hi_gh);}
+    if (enc.leftH()){
+      hi_gh += 1000;
+    Serial.println("leftH"); // нажатый поворот налево
+    Serial.println(hi_gh);}
+    if (enc.rightH()){
+    hi_gh -= 1000;
+    Serial.println("rightH"); // нажатый поворот направо
+    Serial.println(hi_gh);}
+
+      // Не вызывает подключенные коллбэки внутри прерывания!!!
+  
+}
+
+void setup()
+{
+  Serial.begin(9600);
+
+  // режим следования к целевй позиции
+  stepper.setRunMode(FOLLOW_POS);
+  //stepper.reverse(true);
+  // установка макс. скорости в шагах/сек
+  stepper.setMaxSpeed(7000);
+
+  // установка ускорения в шагах/сек/сек
+  stepper.setAcceleration(3000); // 5000
+
+  //Serial.begin(115000);
+  enc.attach(TURN_HANDLER, myTurn); // подключим поворот
+
+  // прерывание обеих фаз энкодера на функцию isr
+  attachInterrupt(0, isr, CHANGE);
+  attachInterrupt(1, isr, CHANGE);
+//-------------------------------------------------------------------------------------
+  regulator.setDirection(NORMAL); // направление регулирования (NORMAL/REVERSE). ПО УМОЛЧАНИЮ СТОИТ NORMAL
+  regulator.setLimits(-30, 30);    // пределы (ставим для 8 битного ШИМ). ПО УМОЛЧАНИЮ СТОЯТ 0 И 255
+  regulator.setpoint = 500;        // сообщаем регулятору температуру, которую он должен поддерживать
+  //regulator.integral = constrain(regulator.integral, -500, 500);
+  // в процессе работы можно менять коэффициенты
+  regulator.Kp = 5.2;
+  regulator.Ki += 0.5;
+  regulator.Kd = 0;
+}
+
+void loop()
+{
+  enc.tick(); // дополнительный опрос таймаутов и коллбэков в loop
+  // вызов подключенных функций будет здесь,
+  // чтобы не грузить прерывание
+  //...............................................................
+  // просто крутим туды-сюды
+  temp = analogRead(3); // сообщаем регулятору текущую температуру
+  regulator.input = temp;
+  regout = regulator.getResult();
+  //stepper.setTarget(hi_gh);
+   if (!stepper.tick())
+  {
+    // static bool dir;
+    if (start == true) // dir = !dir;
+    {
+      Serial.print("  ");
+      Serial.print("WORk");
+      hi_gh = hi_gh + regout/10;
+ //     stepper.setTarget(hi_gh);
+      /*if (regulator.getResultTimer() > 0)
+      {
+        hi_gh = hi_gh + 40; // otskok
+      }
+      else
+      {
+        hi_gh = hi_gh - 25; // rabochiy hod
+      }*/
+    }
+    // hi_gh += -regulator.getResultTimer()+125 ;
+    // if (hi_gh < zeromin) {hi_gh = zeromin;}
+
+  }
+
+  stepper.setTarget(hi_gh);
+  Serial.print("start");
+  Serial.print(start);
+  //Serial.print(" reg ");
+  //Serial.print(regulator.getResult());
+  Serial.print(" curr ");
+  Serial.print(stepper.getCurrent());
+  Serial.print(" hi_gh ");
+  Serial.print(hi_gh);
+  //Serial.print(" temp ");
+  //Serial.print(temp);
+  Serial.print(" regout ");
+  Serial.print(regout);
+  Serial.print( "input" );
+  Serial.println(temp);
+  
+  // =============== КНОПКА ===============
+  if (enc.press())
+    Serial.println("press");
+  if (enc.click())
+    Serial.println("click");
+  if (enc.release())
+    Serial.println("release");
+
+  if (enc.held())
+    Serial.println("held"); // однократно вернёт true при удержании
+  // if (enc.hold()) Serial.println("hold");   // будет постоянно возвращать true после удержания
+  if (enc.step())
+    Serial.println("step"); // импульсное удержание
+
+  // проверка на количество кликов
+  if (enc.hasClicks(1)){
+    //Serial.println("action 1 clicks");
+    start = !start;
+    Serial.println(start);  // ЗАПУСК ПРОЦЕССА
+  }
+  if (enc.hasClicks(2))
+  {
+    hi_gh = zeromin;
+    //setCurrent(hi_gh);
+    //Serial.println("action 2 clicks");
+    Serial.println("Zero = 10");
+  }
+  if (enc.hasClicks(3))
+    Serial.println("action 3 clicks");
+  if (enc.hasClicks(5))
+    Serial.println("action 5 clicks");
+
+  // вывести количество кликов
+  if (enc.hasClicks())
+  {
+    Serial.print("has clicks ");
+    Serial.println(enc.clicks);
+  }
+   
+
+    // график положения
+    /* static uint32_t tmr2;
+     if (millis() - tmr2 > 20)
+     {
+       tmr2 = millis();
+       Serial.println(stepper.getCurrent());
+     }*/
+
+   
+    /*Serial.print(regulator.getResultTimer());
+    Serial.print("  ");
+    Serial.print(hi_gh);
+    Serial.print("  ");
+    Serial.print(start);
+    Serial.println("  hi_gh ");
+    */
+    // getResultTimer возвращает значение для управляющего устройства
+    // (после вызова можно получать это значение как regulator.output)
+    // обновление происходит по встроенному таймеру на millis()
+    //Serial.println (regulator.getResultTimer()); // отправляем на мосфет
+    //Serial.println(hi_gh);
+}
